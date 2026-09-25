@@ -23,7 +23,6 @@ namespace Mini.RegionInstall
 	using System.Linq;
 	using BepInEx;
 	using BepInEx.Configuration;
-	using BepInEx.Unity.IL2CPP;
 	using HarmonyLib;
 	using Newtonsoft.Json;
 	using UnityEngine.SceneManagement;
@@ -33,24 +32,24 @@ namespace Mini.RegionInstall
 	 * Plugin that installs user specified servers into the region file.
 	 * </summary>
 	 */
-	[BepInAutoPlugin("at.duikbo.regioninstall")]
+	[BepInPlugin("at.duikbo.regioninstall", "Mini.RegionInstall", "1.2.0")]
 	[BepInProcess("Among Us.exe")]
-	public partial class RegionInstallPlugin : BasePlugin
+	public partial class RegionInstallPlugin : BaseUnityPlugin
 	{
-		internal static BepInEx.Logging.ManualLogSource? Logger;
+		internal static BepInEx.Logging.ManualLogSource? Log;
 
 		private static ReadOnlyDictionary<string, IRegionInfo>? parsedRegions;
 
-		public Harmony Harmony { get; } = new Harmony(Id);
+		public Harmony Harmony { get; } = new Harmony("at.duikbo.regioninstall");
 		/**
 		 * <summary>
 		 * Load the plugin and install the servers.
 		 * </summary>
 		 */
-		public override void Load()
+		private void Awake()
 		{
-			Logger = this.Log;
-			this.Log.LogInfo("Starting Mini.RegionInstall");
+			Log = this.Logger;
+			Log.LogInfo("Starting Mini.RegionInstall");
 			this.Harmony.PatchAll();
 			ConfigEntry<string>? regions = this.Config.Bind(
 				"General",
@@ -65,7 +64,7 @@ namespace Mini.RegionInstall
 				"Comma-seperated list of region names that should be removed.");
 
 			// Register our regions when at the main menu to run after AU loads the server file
-			SceneManager.add_sceneLoaded((Action<Scene, LoadSceneMode>)((scene, _) =>
+			SceneManager.sceneLoaded += (scene, _) =>
 			{
 				if (scene.name == "MainMenu")
 				{
@@ -73,13 +72,13 @@ namespace Mini.RegionInstall
 					if (removeRegions != null)
 					{
 						string[] rmRegions = removeRegions.Value.Split(",");
-						this.Log.LogInfo($"Removing User Regions: \"{string.Join("\", \"", rmRegions)}\"");
+						Log.LogInfo($"Removing User Regions: \"{string.Join("\", \"", rmRegions)}\"");
 						this.RemoveRegions(rmRegions);
 					}
 
 					if (regions != null && regions.Value.Length != 0)
 					{
-						this.Log.LogInfo("Adding User Regions");
+						Log.LogInfo("Adding User Regions");
 						IRegionInfo[] parsed = this.ParseRegions(regions.Value);
 						this.AddRegions(parsed);
 
@@ -88,10 +87,11 @@ namespace Mini.RegionInstall
 						{
 							regionsDict[region.Name] = region;
 						}
+
 						parsedRegions = new ReadOnlyDictionary<string, IRegionInfo>(regionsDict);
 					}
 				}
-			}));
+			};
 		}
 
 		/**
@@ -103,12 +103,12 @@ namespace Mini.RegionInstall
 		{
 			ServerManager serverMngr = DestroyableSingleton<ServerManager>.Instance;
 			IRegionInfo? currentRegion = serverMngr.CurrentRegion;
-			this.Log.LogInfo($"Adding {regions.Length} regions");
+			Log.LogInfo($"Adding {regions.Length} regions");
 			foreach (IRegionInfo region in regions)
 			{
 				if (region == null)
 				{
-					this.Log.LogError("Could not add region");
+					Log.LogError("Could not add region");
 				}
 				else
 				{
@@ -124,19 +124,19 @@ namespace Mini.RegionInstall
 			// AU remembers the previous region that was set, so we need to restore it
 			if (currentRegion != null)
 			{
-				this.Log.LogDebug("Resetting previous region");
+				Log.LogDebug("Resetting previous region");
 				serverMngr.SetRegion(currentRegion);
 			}
 		}
 
 		private IRegionInfo[] ParseRegions(string regions)
 		{
-			this.Log.LogInfo($"Parsing {regions}");
+			Log.LogInfo($"Parsing {regions}");
 			switch (regions[0])
 			{
 				// The entire JsonServerData
 				case '{':
-					this.Log.LogInfo("Loading server data");
+					Log.LogInfo("Loading server data");
 
 					var result = JsonConvert.DeserializeObject<ServerManager.JsonServerData>(
 						regions,
@@ -144,19 +144,19 @@ namespace Mini.RegionInstall
 
 					foreach (IRegionInfo region in result.Regions)
 					{
-						this.Log.LogInfo($"Region \"{region.Name}\" @ {region.Servers[0].Ip}:{region.Servers[0].Port}");
+						Log.LogInfo($"Region \"{region.Name}\" @ {region.Servers[0].Ip}:{region.Servers[0].Port}");
 					}
 
 					return result.Regions;
 
 				// Only the IRegionInfo array
 				case '[':
-					this.Log.LogInfo("Loading region array");
+					Log.LogInfo("Loading region array");
 
 					// Sadly AU does not have a Generic that parses IRegionInfo[] directly, so instead we wrap the array into a JsonServerData structure.
 					return this.ParseRegions($"{{\"CurrentRegionIdx\":0,\"Regions\":{regions}}}");
 				default:
-					this.Log.LogError("Could not detect format of configured regions");
+					Log.LogError("Could not detect format of configured regions");
 					return Array.Empty<IRegionInfo>();
 			}
 		}
@@ -164,17 +164,17 @@ namespace Mini.RegionInstall
 		public static void CorrectCurrentRegion(ServerManager instance)
 		{
 			var region = instance.CurrentRegion;
-			RegionInstallPlugin.Logger?.LogInfo($"Current region: {region.Name} ({region.Servers.Length} servers)");
-			RegionInstallPlugin.Logger?.LogInfo($"Region \"{region.Servers[0].Name}\" @ {region.Servers[0].Ip}:{region.Servers[0].Port}");
+			RegionInstallPlugin.Log?.LogInfo($"Current region: {region.Name} ({region.Servers.Length} servers)");
+			RegionInstallPlugin.Log?.LogInfo($"Region \"{region.Servers[0].Name}\" @ {region.Servers[0].Ip}:{region.Servers[0].Port}");
 
 			if (RegionInstallPlugin.parsedRegions != null && RegionInstallPlugin.parsedRegions.ContainsKey(region.Name))
 			{
 				instance.CurrentRegion = RegionInstallPlugin.parsedRegions[region.Name];
 
-				RegionInstallPlugin.Logger?.LogInfo("Loading region from cache instead of from file");
+				RegionInstallPlugin.Log?.LogInfo("Loading region from cache instead of from file");
 				if (region.Servers[0].Port != instance.CurrentRegion.Servers[0].Port)
 				{
-					RegionInstallPlugin.Logger?.LogInfo($"Port corrected from {region.Servers[0].Port} to {instance.CurrentRegion.Servers[0].Port}");
+					RegionInstallPlugin.Log?.LogInfo($"Port corrected from {region.Servers[0].Port} to {instance.CurrentRegion.Servers[0].Port}");
 				}
 			}
 		}
@@ -192,10 +192,10 @@ namespace Mini.RegionInstall
 	{
 		public static void Postfix(DnsRegionInfo __instance)
 		{
-			RegionInstallPlugin.Logger?.LogInfo($"DRI Populate Servers: {__instance.Fqdn}");
+			RegionInstallPlugin.Log?.LogInfo($"DRI Populate Servers: {__instance.Fqdn}");
 			foreach (var server in __instance.Servers)
 			{
-				RegionInstallPlugin.Logger?.LogInfo($"Configured server: {server.ToString()}");
+				RegionInstallPlugin.Log?.LogInfo($"Configured server: {server.ToString()}");
 			}
 		}
 	}
@@ -211,7 +211,7 @@ namespace Mini.RegionInstall
 		public static void Postfix(ServerManager __instance)
 		{
 			var server = __instance.CurrentUdpServer;
-			RegionInstallPlugin.Logger?.LogInfo($"Current server: {server.ToString()}");
+			RegionInstallPlugin.Log?.LogInfo($"Current server: {server.ToString()}");
 		}
 	}
 
