@@ -1,6 +1,8 @@
-# Mini.RegionInstall
+# Mini.RegionInstall.Mono
 
 This mod allows you to pre-install a server region into your Among Us.
+
+This is the mono version with only syntactic changes necessary to compile. Full credit goes to the [original repository](https://github.com/miniduikboot/Mini.RegionInstall).
 
 This can be useful when creating a modpack and installing a custom server for all users of your mod.
 
